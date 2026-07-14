@@ -34,6 +34,20 @@ class NotificationService {
     return Promise.all(userIds.map((userId) => this.create({ ...payload, userId })));
   }
 
+  async notifyUsersByRoles(roles, payload, { region = null } = {}) {
+    const { User } = await import('../models/index.js');
+    const roleList = Array.isArray(roles) ? roles : [roles];
+    const filter = { isActive: true, roles: { $in: roleList } };
+    if (region) filter.region = region;
+    const users = await User.find(filter).select('_id');
+    if (users.length) {
+      await this.notifyMany(
+        users.map((u) => u._id),
+        payload
+      );
+    }
+  }
+
   async markAsRead(id, userId) {
     return notificationRepository.updateById(id, { isRead: true, readAt: new Date() });
   }

@@ -13,6 +13,7 @@ import routes from './routes/index.js';
 import { errorHandler, notFound } from './middlewares/error.middleware.js';
 import { swaggerSpec } from './config/swagger.js';
 import { configureCloudinary } from './config/cloudinary.js';
+import connectDB from './config/database.js';
 import mongoose from 'mongoose';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -20,6 +21,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
 configureCloudinary();
+
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors({

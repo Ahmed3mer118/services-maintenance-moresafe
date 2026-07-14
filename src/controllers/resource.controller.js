@@ -18,7 +18,9 @@ import inventoryService from '../services/inventoryService.js';
 import { sendSuccess, sendCreated, sendPaginated, sendNoContent } from '../utils/responseHelper.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { buildPagination, buildSort, buildSearchFilter, pickQueryFilters } from '../utils/pagination.js';
-import { NotFoundError } from '../utils/AppError.js';
+import { NotFoundError, AuthorizationError } from '../utils/AppError.js';
+import { ROLES } from '../constants/roles.js';
+import { getLeaderTeamIds, isTeamLeaderOnly, assertLeaderTeamAccess } from '../utils/leaderScope.js';
 
 const crudController = (repository, entityName, populate = []) => ({
   list: asyncHandler(async (req, res) => {
@@ -135,7 +137,31 @@ export const schoolController = {
   }),
 };
 export const teamController = {
-  ...crudController(teamRepository, 'MaintenanceTeam', ['region', 'leader', 'members']),
+  get: crudController(teamRepository, 'MaintenanceTeam', ['region', 'leader', 'members']).get,
+  list: asyncHandler(async (req, res) => {
+    const pagination = buildPagination(req.query.page, req.query.limit);
+    const filter = {
+      isDeleted: { $ne: true },
+      ...pickQueryFilters(req.query, ['region', 'isActive']),
+      ...buildSearchFilter(req.query.search, ['name', 'code']),
+    };
+    if (isTeamLeaderOnly(req.user)) {
+      filter.leader = req.user._id;
+    }
+    const [data, total] = await Promise.all([
+      teamRepository.findAll(filter, {
+        skip: pagination.skip,
+        limit: pagination.limit,
+        sort: buildSort(req.query.sort),
+        populate: ['region', 'leader', 'members'],
+      }),
+      teamRepository.count(filter),
+    ]);
+    sendPaginated(res, data, { ...pagination, total });
+  }),
+  create: crudController(teamRepository, 'MaintenanceTeam', ['region', 'leader', 'members']).create,
+  update: crudController(teamRepository, 'MaintenanceTeam', ['region', 'leader', 'members']).update,
+  remove: crudController(teamRepository, 'MaintenanceTeam', ['region', 'leader', 'members']).remove,
   getDetail: asyncHandler(async (req, res) => {
     const { MaintenanceTeam, Ticket, Report } = await import('../models/index.js');
     const team = await MaintenanceTeam.findById(req.params.id)
@@ -149,6 +175,9 @@ export const teamController = {
         ],
       });
     if (!team) throw new NotFoundError('MaintenanceTeam');
+    if (isTeamLeaderOnly(req.user)) {
+      await assertLeaderTeamAccess(req.user, team._id);
+    }
 
     const tickets = await Ticket.find({ team: team._id, isDeleted: { $ne: true } })
       .populate('school', 'name code')
@@ -189,6 +218,10 @@ export const workerController = {
       ...pickQueryFilters(req.query, ['region', 'isActive', 'team', 'specialty']),
       ...buildSearchFilter(req.query.search, ['employeeId']),
     };
+    if (isTeamLeaderOnly(req.user)) {
+      const teamIds = await getLeaderTeamIds(req.user);
+      filter.team = teamIds.length ? { $in: teamIds } : { $in: [] };
+    }
     const [data, total] = await Promise.all([
       workerRepository.findAll(filter, {
         skip: pagination.skip,
