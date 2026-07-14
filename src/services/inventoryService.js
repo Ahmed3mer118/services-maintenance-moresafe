@@ -286,12 +286,9 @@ class InventoryService {
       filter.worker = user.workerProfile;
     } else if (isLeader) {
       const { MaintenanceTeam } = await import('../models/index.js');
-      const team = await MaintenanceTeam.findOne({ leader: user._id });
-      if (team?.members?.length) {
-        filter.worker = { $in: team.members };
-      } else {
-        filter.worker = { $in: [] };
-      }
+      const teams = await MaintenanceTeam.find({ leader: user._id, isDeleted: { $ne: true } });
+      const memberIds = [...new Set(teams.flatMap((t) => (t.members || []).map((m) => m.toString())))];
+      filter.worker = memberIds.length ? { $in: memberIds } : { $in: [] };
     } else if (!isWarehouse) {
       throw new AuthorizationError('Access denied');
     }

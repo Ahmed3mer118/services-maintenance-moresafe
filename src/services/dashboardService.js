@@ -2,6 +2,7 @@ import { Ticket, TicketTask, MaterialRequest, MaintenanceTeam, Worker, Inventory
 import { TICKET_STATUS, TASK_STATUS } from '../constants/statuses.js';
 import { ROLES } from '../constants/roles.js';
 import { toObjectId } from '../utils/idHelper.js';
+import teamLeaderService from './teamLeaderService.js';
 
 class DashboardService {
   async getAdminDashboard(regionFilter) {
@@ -80,6 +81,8 @@ class DashboardService {
     const sla = slaCompliance[0];
     const slaRate = sla?.total ? ((sla.total - sla.breached) / sla.total) * 100 : 100;
 
+    const teamLeaders = await teamLeaderService.list();
+
     return {
       kpis: {
         openTickets,
@@ -91,13 +94,15 @@ class DashboardService {
       statusBreakdown: statusCounts,
       topProblems,
       workerProductivity,
+      teamLeaders,
     };
   }
 
-  async getLeaderDashboard(teamId) {
-    if (!teamId) {
+  async getLeaderDashboard(teamIds = [], teamsMeta = []) {
+    if (!teamIds.length) {
       return {
         kpis: { assignedTickets: 0, pendingReviews: 0, waitingMaterials: 0, slaAlerts: 0 },
+        teams: [],
         team: null,
         activeTickets: [],
         pendingReviewTasks: [],
@@ -106,11 +111,17 @@ class DashboardService {
       };
     }
 
-    const team = await MaintenanceTeam.findById(teamId)
-      .populate('leader', 'firstName lastName email phone')
-      .populate({ path: 'members', populate: [{ path: 'user', select: 'firstName lastName phone' }, 'specialty'] });
+    const teams =
+      teamsMeta.length > 0
+        ? teamsMeta
+        : await MaintenanceTeam.find({ _id: { $in: teamIds } })
+            .populate('leader', 'firstName lastName email phone')
+            .populate({
+              path: 'members',
+              populate: [{ path: 'user', select: 'firstName lastName phone' }, 'specialty'],
+            });
 
-    const filter = { team: teamId, isDeleted: false };
+    const filter = { team: { $in: teamIds }, isDeleted: false };
     const teamTicketIds = await Ticket.find(filter).distinct('_id');
 
     const [
@@ -160,12 +171,24 @@ class DashboardService {
         .select('ticketNumber title priority status slaDeadline school'),
     ]);
 
+    const memberMap = new Map();
+    for (const team of teams) {
+      for (const member of team.members || []) {
+        memberMap.set(member._id.toString(), member);
+      }
+    }
+
+    const primaryTeam = teams[0];
+
     return {
       kpis: { assignedTickets, pendingReviews, waitingMaterials, slaAlerts },
-      team: team ? { _id: team._id, name: team.name, code: team.code, leader: team.leader } : null,
+      teams: teams.map((t) => ({ _id: t._id, name: t.name, code: t.code, region: t.region })),
+      team: primaryTeam
+        ? { _id: primaryTeam._id, name: primaryTeam.name, code: primaryTeam.code, leader: primaryTeam.leader }
+        : null,
       activeTickets,
       pendingReviewTasks,
-      teamWorkers: team?.members || [],
+      teamWorkers: [...memberMap.values()],
       slaAlertTickets,
     };
   }
@@ -317,8 +340,14 @@ class DashboardService {
       return { type: 'admin', data: await this.getAdminDashboard(user.region) };
     }
     if (user.roles.includes(ROLES.TEAM_LEADER)) {
-      const team = await MaintenanceTeam.findOne({ leader: user._id });
-      return { type: 'leader', data: await this.getLeaderDashboard(team?._id) };
+      const teams = await MaintenanceTeam.find({ leader: user._id, isDeleted: { $ne: true } })
+        .populate('leader', 'firstName lastName email phone')
+        .populate({
+          path: 'members',
+          populate: [{ path: 'user', select: 'firstName lastName phone' }, 'specialty'],
+        });
+      const teamIds = teams.map((t) => t._id);
+      return { type: 'leader', data: await this.getLeaderDashboard(teamIds, teams) };
     }
     if (user.roles.includes(ROLES.WORKER) && user.workerProfile) {
       return { type: 'worker', data: await this.getWorkerDashboard(toObjectId(user.workerProfile)) };

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as authController from '../controllers/auth.controller.js';
 import * as ticketController from '../controllers/ticket.controller.js';
 import * as resourceController from '../controllers/resource.controller.js';
+import * as teamLeaderController from '../controllers/teamLeader.controller.js';
 import { authenticate } from '../middlewares/auth.middleware.js';
 import { authorize } from '../middlewares/authorize.middleware.js';
 import { validate } from '../validators/schemas.js';
@@ -32,6 +33,9 @@ import {
   slaSchema,
   ticketUpdateSchema,
   paginationSchema,
+  teamLeaderCreateSchema,
+  teamLeaderUpdateSchema,
+  teamLeaderAssignTeamsSchema,
 } from '../validators/schemas.js';
 import { PERMISSIONS } from '../constants/permissions.js';
 import { uploadImages } from '../middlewares/upload.middleware.js';
@@ -47,6 +51,13 @@ router.get('/auth/me', authenticate, authController.getProfile);
 
 // Dashboard
 router.get('/dashboard', authenticate, resourceController.dashboardController.get);
+
+// Team Leaders
+router.get('/team-leaders', authenticate, authorize(PERMISSIONS.USERS_READ, PERMISSIONS.TEAMS_WRITE), teamLeaderController.list);
+router.post('/team-leaders', authenticate, authorize(PERMISSIONS.USERS_WRITE), validate(teamLeaderCreateSchema), teamLeaderController.create);
+router.get('/team-leaders/:id', authenticate, authorize(PERMISSIONS.USERS_READ, PERMISSIONS.TEAMS_WRITE), teamLeaderController.get);
+router.put('/team-leaders/:id', authenticate, authorize(PERMISSIONS.USERS_WRITE), validate(teamLeaderUpdateSchema), teamLeaderController.update);
+router.put('/team-leaders/:id/teams', authenticate, authorize(PERMISSIONS.TEAMS_WRITE), validate(teamLeaderAssignTeamsSchema), teamLeaderController.assignTeams);
 
 // Regions
 router.get('/regions', authenticate, authorize(PERMISSIONS.REGIONS_READ), validate(paginationSchema, 'query'), resourceController.regionController.list);

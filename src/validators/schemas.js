@@ -274,3 +274,29 @@ export const slaSchema = Joi.object({
   responseTimeHours: Joi.number().min(1).required(),
   resolutionTimeHours: Joi.number().min(1).required(),
 });
+
+export const teamLeaderCreateSchema = Joi.object({
+  email: Joi.string().email().required(),
+  password: Joi.string().min(6).required(),
+  firstName: Joi.string().required(),
+  lastName: Joi.string().required(),
+  phone: Joi.string().allow(''),
+  region: objectId.required(),
+  teamIds: Joi.array().items(objectId).default([]),
+  isActive: Joi.boolean().truthy('true', '1').falsy('false', '0', ''),
+});
+
+export const teamLeaderUpdateSchema = Joi.object({
+  email: Joi.string().email(),
+  password: Joi.string().min(6),
+  firstName: Joi.string(),
+  lastName: Joi.string(),
+  phone: Joi.string().allow(''),
+  region: objectId,
+  teamIds: Joi.array().items(objectId),
+  isActive: Joi.boolean().truthy('true', '1').falsy('false', '0', ''),
+}).min(1);
+
+export const teamLeaderAssignTeamsSchema = Joi.object({
+  teamIds: Joi.array().items(objectId).required(),
+});
