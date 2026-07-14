@@ -61,6 +61,14 @@ const authLimiter = rateLimit({
 app.use('/api/v1/auth/login', authLimiter);
 
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+app.get('/', (_req, res) => {
+  res.json({
+    success: true,
+    message: 'Welcome to the Start Server',
+    db: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    timestamp: new Date().toISOString(),
+  });
+});
 
 app.get('/api/v1/health', async (_req, res) => {
   try {
