@@ -1,22 +1,22 @@
 import { schoolRepository, userRepository } from '../repositories/index.js';
 import { ROLES } from '../constants/roles.js';
-import { ConflictError, NotFoundError } from '../utils/AppError.js';
+import { ConflictError, NotFoundError, ValidationError } from '../utils/AppError.js';
 import auditService from './auditService.js';
 
+const schoolPopulate = [
+  'region',
+  'maintenanceTeam',
+  { path: 'adminUsers', select: 'firstName lastName email phone isActive' },
+];
+
 class SchoolService {
-  async create(data, actor, req) {
-    const existing = await userRepository.findByEmail(data.adminEmail);
+  async createAdminUser(school, { adminEmail, adminPassword, adminFirstName, adminLastName }) {
+    if (!adminEmail || !adminPassword || !adminFirstName || !adminLastName) {
+      throw new ValidationError('Admin name, email, and password are required');
+    }
+
+    const existing = await userRepository.findByEmail(adminEmail);
     if (existing) throw new ConflictError('Email already in use');
-
-    const {
-      adminEmail,
-      adminPassword,
-      adminFirstName,
-      adminLastName,
-      ...schoolData
-    } = data;
-
-    const school = await schoolRepository.create(schoolData);
 
     const adminUser = await userRepository.create({
       email: adminEmail.toLowerCase(),
@@ -32,6 +32,32 @@ class SchoolService {
     school.adminUsers = [adminUser._id];
     await school.save();
 
+    return adminUser;
+  }
+
+  async create(data, actor, req) {
+    const {
+      adminEmail,
+      adminPassword,
+      adminFirstName,
+      adminLastName,
+      ...schoolData
+    } = data;
+
+    const school = await schoolRepository.create(schoolData);
+
+    try {
+      await this.createAdminUser(school, {
+        adminEmail,
+        adminPassword,
+        adminFirstName,
+        adminLastName,
+      });
+    } catch (err) {
+      await schoolRepository.deleteById(school._id);
+      throw err;
+    }
+
     await auditService.log({
       user: actor._id,
       action: 'CREATE',
@@ -41,7 +67,35 @@ class SchoolService {
       req,
     });
 
-    return schoolRepository.findById(school._id, ['region', 'maintenanceTeam']);
+    return schoolRepository.findById(school._id, schoolPopulate);
+  }
+
+  async updateAdminUser(school, { adminEmail, adminPassword, adminFirstName, adminLastName }) {
+    const adminId = school.adminUsers[0];
+    const admin = await userRepository.findById(adminId);
+    if (!admin) {
+      school.adminUsers = [];
+      await school.save();
+      return this.createAdminUser(school, {
+        adminEmail,
+        adminPassword,
+        adminFirstName,
+        adminLastName,
+      });
+    }
+
+    if (adminEmail && adminEmail.toLowerCase() !== admin.email) {
+      const dup = await userRepository.findByEmail(adminEmail);
+      if (dup && dup._id.toString() !== admin._id.toString()) {
+        throw new ConflictError('Email already in use');
+      }
+      admin.email = adminEmail.toLowerCase();
+    }
+    if (adminPassword) admin.password = adminPassword;
+    if (adminFirstName) admin.firstName = adminFirstName;
+    if (adminLastName) admin.lastName = adminLastName;
+    await admin.save();
+    return admin;
   }
 
   async update(id, data, actor, req) {
@@ -53,21 +107,22 @@ class SchoolService {
     Object.assign(school, schoolData);
     await school.save();
 
-    if (school.adminUsers?.length && (adminEmail || adminPassword || adminFirstName || adminLastName)) {
-      const adminId = school.adminUsers[0];
-      const admin = await userRepository.findById(adminId);
-      if (admin) {
-        if (adminEmail && adminEmail.toLowerCase() !== admin.email) {
-          const dup = await userRepository.findByEmail(adminEmail);
-          if (dup && dup._id.toString() !== admin._id.toString()) {
-            throw new ConflictError('Email already in use');
-          }
-          admin.email = adminEmail.toLowerCase();
-        }
-        if (adminPassword) admin.password = adminPassword;
-        if (adminFirstName) admin.firstName = adminFirstName;
-        if (adminLastName) admin.lastName = adminLastName;
-        await admin.save();
+    const hasAdminFields = adminEmail || adminPassword || adminFirstName || adminLastName;
+    if (hasAdminFields) {
+      if (school.adminUsers?.length) {
+        await this.updateAdminUser(school, {
+          adminEmail,
+          adminPassword,
+          adminFirstName,
+          adminLastName,
+        });
+      } else {
+        await this.createAdminUser(school, {
+          adminEmail,
+          adminPassword,
+          adminFirstName,
+          adminLastName,
+        });
       }
     }
 
@@ -80,7 +135,7 @@ class SchoolService {
       req,
     });
 
-    return schoolRepository.findById(id, ['region', 'maintenanceTeam']);
+    return schoolRepository.findById(id, schoolPopulate);
   }
 }
 

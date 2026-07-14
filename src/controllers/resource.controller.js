@@ -86,10 +86,16 @@ const crudController = (repository, entityName, populate = []) => ({
 });
 
 export const regionController = crudController(regionRepository, 'Region');
+const schoolPopulate = [
+  'region',
+  'maintenanceTeam',
+  { path: 'adminUsers', select: 'firstName lastName email phone isActive' },
+];
+
 export const schoolController = {
-  get: crudController(schoolRepository, 'School', ['region', 'maintenanceTeam']).get,
-  list: crudController(schoolRepository, 'School', ['region', 'maintenanceTeam']).list,
-  remove: crudController(schoolRepository, 'School', ['region', 'maintenanceTeam']).remove,
+  get: crudController(schoolRepository, 'School', schoolPopulate).get,
+  list: crudController(schoolRepository, 'School', schoolPopulate).list,
+  remove: crudController(schoolRepository, 'School', schoolPopulate).remove,
   create: asyncHandler(async (req, res) => {
     const school = await schoolService.create(req.body, req.user, req);
     sendCreated(res, school);
