@@ -17,23 +17,27 @@ import connectDB from './config/database.js';
 import mongoose from 'mongoose';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const isVercel = !!process.env.VERCEL;
 
 const app = express();
 
 configureCloudinary();
 
-app.use(async (req, res, next) => {
-  try {
-    await connectDB();
-    next();
-  } catch (err) {
-    next(err);
-  }
-});
-
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+
+const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin) || /\.vercel\.app$/i.test(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(null, allowedOrigins[0] || true);
+  },
   credentials: true,
 }));
 app.use(compression());
@@ -58,17 +62,31 @@ app.use('/api/v1/auth/login', authLimiter);
 
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-app.get('/api/v1/health', (_req, res) => {
-  res.json({
-    success: true,
-    status: 'ok',
-    db: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-    timestamp: new Date().toISOString(),
-  });
+app.get('/api/v1/health', async (_req, res) => {
+  try {
+    await connectDB();
+    res.json({
+      success: true,
+      status: 'ok',
+      db: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(503).json({
+      success: false,
+      status: 'error',
+      db: 'disconnected',
+      message: err.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
 });
 
 app.use('/api/v1', routes);
-app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+if (!isVercel) {
+  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+}
 
 app.use(notFound);
 app.use(errorHandler);
