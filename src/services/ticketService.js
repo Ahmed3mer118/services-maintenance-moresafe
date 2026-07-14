@@ -19,6 +19,7 @@ import notificationService from './notificationService.js';
 import { ROLES } from '../constants/roles.js';
 import { buildPagination, buildSort, buildSearchFilter, pickQueryFilters } from '../utils/pagination.js';
 import { toObjectId } from '../utils/idHelper.js';
+import { getLeaderTeamIds, isTeamLeaderOnly, assertLeaderTeamAccess } from '../utils/leaderScope.js';
 
 class TicketService {
   async create(data, user, req) {
@@ -74,6 +75,19 @@ class TicketService {
     });
 
     const populated = await ticketRepository.findById(ticket._id, ticketRepository.defaultPopulate);
+
+    const regionId = school.region._id || school.region;
+    await notificationService.notifyUsersByRoles(
+      [ROLES.MAINTENANCE_MANAGER],
+      {
+        type: 'new_ticket',
+        title: 'New Maintenance Ticket / بلاغ جديد',
+        message: `${ticketNumber}: ${data.title} — ${school.name}`,
+        entityType: 'Ticket',
+        entityId: ticket._id,
+      },
+      { region: regionId }
+    );
 
     if (school.maintenanceTeam) {
       await this._notifyTeamLeader(school.maintenanceTeam, populated);
@@ -228,8 +242,13 @@ class TicketService {
 
     if (user.roles.includes(ROLES.SCHOOL_ADMIN) && user.school) {
       filter.school = toObjectId(user.school);
-    } else if (user.roles.includes(ROLES.TEAM_LEADER) && user.region) {
-      filter.region = user.region;
+    } else if (user.roles.includes(ROLES.TEAM_LEADER)) {
+      const teamIds = await getLeaderTeamIds(user);
+      if (teamIds.length) {
+        filter.team = { $in: teamIds };
+      } else {
+        filter.team = { $in: [] };
+      }
     } else if (user.roles.includes(ROLES.WORKER) && user.workerProfile) {
       const workerId = toObjectId(user.workerProfile);
       const taskTicketIds = await TicketTask.find({ worker: workerId }).distinct('ticket');
@@ -251,6 +270,9 @@ class TicketService {
   async getById(id, user = null) {
     const ticket = await ticketRepository.findById(id, ticketRepository.defaultPopulate);
     if (!ticket) throw new NotFoundError('Ticket');
+    if (user?.roles?.includes(ROLES.TEAM_LEADER) && isTeamLeaderOnly(user)) {
+      await assertLeaderTeamAccess(user, ticket.team?._id || ticket.team);
+    }
     let tasks = await ticketTaskRepository.findByTicket(id);
 
     if (user?.roles?.includes(ROLES.WORKER) && user.workerProfile) {
@@ -352,6 +374,18 @@ class TicketService {
             }
           );
         }
+
+        await notificationService.notifyUsersByRoles(
+          [ROLES.MAINTENANCE_MANAGER],
+          {
+            type: 'ticket_approved',
+            title: 'Ticket Fully Approved',
+            message: `All work approved on ${ticket.ticketNumber} — report can be generated`,
+            entityType: 'Ticket',
+            entityId: ticketId,
+          },
+          { region: ticket.region }
+        );
 
         try {
           const reportService = (await import('./reportService.js')).default;

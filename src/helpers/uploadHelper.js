@@ -54,20 +54,23 @@ export async function uploadToCloudinary(buffer, options = {}) {
 }
 
 export async function uploadMultipleFiles(files, userId) {
-  const results = [];
-  for (const file of files) {
-    try {
-      const uploaded = await uploadToCloudinary(file.buffer, {
-        filename: file.originalname,
-        mimeType: file.mimetype,
-      });
-      results.push({ ...uploaded, uploadedBy: userId, uploadedAt: new Date() });
-    } catch (err) {
-      logger.error('File upload error', err);
-    }
-  }
-  if (files.length && !results.length) {
+  const results = await Promise.all(
+    files.map(async (file) => {
+      try {
+        const uploaded = await uploadToCloudinary(file.buffer, {
+          filename: file.originalname,
+          mimeType: file.mimetype,
+        });
+        return { ...uploaded, uploadedBy: userId, uploadedAt: new Date() };
+      } catch (err) {
+        logger.error('File upload error', err);
+        return null;
+      }
+    })
+  );
+  const successful = results.filter(Boolean);
+  if (files.length && !successful.length) {
     throw new AppError('Upload failed', 500);
   }
-  return results;
+  return successful;
 }

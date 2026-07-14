@@ -10,8 +10,16 @@ import auditService from './auditService.js';
 import notificationService from './notificationService.js';
 import { MaintenanceTeam } from '../models/index.js';
 import workerRepository from '../repositories/workerRepository.js';
+import { ROLES } from '../constants/roles.js';
 import { AppError } from '../utils/AppError.js';
 import { toObjectId } from '../utils/idHelper.js';
+
+function computeWorkingHours(task) {
+  if (!task.startedAt) return 0;
+  const end = task.completedAt || new Date();
+  const hours = (new Date(end) - new Date(task.startedAt)) / 3600000;
+  return Math.max(0, Math.round(hours * 10) / 10);
+}
 
 class TaskService {
   async acceptTask(taskId, user, req) {
@@ -23,7 +31,22 @@ class TaskService {
   }
 
   async startTask(taskId, user, req) {
-    return this._transition(taskId, TASK_STATUS.IN_PROGRESS, user, req, { startedAt: new Date() });
+    const task = await this._getTaskForWorker(taskId, user);
+    validateTaskTransition(task.status, TASK_STATUS.IN_PROGRESS);
+    task.status = TASK_STATUS.IN_PROGRESS;
+    task.startedAt = new Date();
+    task.statusHistory.push(createStatusHistoryEntry(TASK_STATUS.IN_PROGRESS, user._id));
+    await task.save();
+    await ticketService.syncTicketStatusFromTasks(task.ticket, user._id);
+    await auditService.log({
+      user: user._id,
+      action: 'STATUS_CHANGE',
+      entityType: 'TicketTask',
+      entityId: taskId,
+      changes: { status: TASK_STATUS.IN_PROGRESS, startedAt: task.startedAt },
+      req,
+    });
+    return task;
   }
 
   async completeTask(taskId, data, user, req) {
@@ -33,7 +56,7 @@ class TaskService {
     task.status = TASK_STATUS.COMPLETED;
     task.completedAt = new Date();
     if (data.notes) task.notes = data.notes;
-    if (data.workingHours) task.workingHours = data.workingHours;
+    task.workingHours = computeWorkingHours(task);
     if (data.beforeImages) task.beforeImages.push(...data.beforeImages);
     if (data.duringImages) task.duringImages.push(...data.duringImages);
     if (data.afterImages) task.afterImages.push(...data.afterImages);
@@ -121,6 +144,25 @@ class TaskService {
           entityType: 'TicketTask',
           entityId: taskId,
         });
+      }
+    }
+
+    if (action === 'approve') {
+      const ticket = await import('../repositories/ticketRepository.js').then((m) =>
+        m.default.findById(task.ticket)
+      );
+      if (ticket) {
+        await notificationService.notifyUsersByRoles(
+          [ROLES.MAINTENANCE_MANAGER],
+          {
+            type: 'task_approved',
+            title: 'Task Approved by Leader',
+            message: `Work approved on ticket ${ticket.ticketNumber}`,
+            entityType: 'Ticket',
+            entityId: ticket._id,
+          },
+          { region: ticket.region }
+        );
       }
     }
 
