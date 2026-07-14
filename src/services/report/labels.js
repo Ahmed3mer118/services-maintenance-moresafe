@@ -1,0 +1,32 @@
+export const STATUS_ACTIONS = {
+  new: { en: 'Created Ticket', ar: 'إنشاء البلاغ' },
+  assigned: { en: 'Assigned Team', ar: 'تعيين الفريق' },
+  accepted: { en: 'Accepted Task', ar: 'قبول المهمة' },
+  in_progress: { en: 'Started Work', ar: 'بدء العمل' },
+  waiting_materials: { en: 'Waiting Materials', ar: 'انتظار مواد' },
+  completed: { en: 'Completed Work', ar: 'إتمام العمل' },
+  under_review: { en: 'Submitted for Review', ar: 'إرسال للمراجعة' },
+  approved: { en: 'Approved', ar: 'الموافقة' },
+  needs_rework: { en: 'Rework Required', ar: 'إعادة عمل' },
+  rejected: { en: 'Rejected', ar: 'رفض' },
+  closed: { en: 'Closed Ticket', ar: 'إغلاق البلاغ' },
+  cancelled: { en: 'Cancelled', ar: 'إلغاء' },
+};
+
+export const SECTIONS = {
+  title: { en: 'Maintenance Ticket Completion Report', ar: 'تقرير إغلاق بلاغ الصيانة' },
+  ticketInfo: { en: '1. Ticket Information', ar: '١. معلومات البلاغ' },
+  schoolInfo: { en: '2. School Information', ar: '٢. معلومات المدرسة' },
+  assetInfo: { en: '3. Asset Information', ar: '٣. معلومات الأصل' },
+  reporterInfo: { en: '4. Reporter Information', ar: '٤. معلومات المُبلِّغ' },
+  assignmentInfo: { en: '5. Assignment Information', ar: '٥. معلومات التعيين' },
+  timeline: { en: '6. Work Timeline', ar: '٦. الجدول الزمني للعمل' },
+  workPerformed: { en: '7. Work Performed', ar: '٧. العمل المنفذ' },
+  materials: { en: '8. Materials Used', ar: '٨. المواد المستخدمة' },
+  images: { en: '9. Images', ar: '٩. الصور' },
+  notes: { en: '10. Notes', ar: '١٠. الملاحظات' },
+  sla: { en: '11. SLA', ar: '١١. اتفاقية مستوى الخدمة' },
+  checklist: { en: '12. Checklist', ar: '١٢. قائمة التحقق' },
+  signatures: { en: '13. Digital Signatures', ar: '١٣. التوقيعات' },
+  qr: { en: '14. QR Code', ar: '١٤. رمز QR' },
+};
