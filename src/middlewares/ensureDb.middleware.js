@@ -1,6 +1,10 @@
 import connectDB from '../config/database.js';
 
-/** Ensures MongoDB is connected before handling API requests (required on serverless). */
+/**
+ * Ensures MongoDB is connected before handling API requests.
+ * Required on serverless: routes must not call connectDB() directly.
+ * Connection is cached globally in database.js to avoid duplicate connections.
+ */
 export async function ensureDb(req, res, next) {
   try {
     await connectDB();

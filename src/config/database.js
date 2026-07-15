@@ -1,66 +1,56 @@
 import mongoose from 'mongoose';
 import logger from '../utils/logger.js';
 
-const globalCache = globalThis;
+let cached = global.mongoose;
 
-if (!globalCache.__mongooseCache) {
-  globalCache.__mongooseCache = { conn: null, promise: null, initDone: false };
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null, initDone: false };
 }
 
-const cache = globalCache.__mongooseCache;
-
-const isServerless = !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
-
 async function runInit() {
-  if (cache.initDone) return;
+  if (cached.initDone) return;
   try {
     const { loadSpecialtiesFromDb } = await import('../services/specialtyRegistry.js');
     const { Specialty } = await import('../models/index.js');
     await loadSpecialtiesFromDb(Specialty);
-    cache.initDone = true;
+    cached.initDone = true;
+    logger.info('Specialty registry initialized from database');
   } catch (err) {
     logger.error(`Specialty init error: ${err.message}`);
   }
 }
 
-export const getDbStatus = () => (
-  mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
-);
-
-export const connectDB = async () => {
+export default async function connectDB() {
   const uri = process.env.MONGODB_URI?.trim();
   if (!uri) {
     throw new Error('MONGODB_URI is not set. Add it in Vercel Environment Variables.');
   }
 
-  if (cache.conn && mongoose.connection.readyState === 1) {
-    return cache.conn;
+  if (cached.conn && mongoose.connection.readyState === 1) {
+    return cached.conn;
   }
 
-  if (!cache.promise) {
-    cache.promise = mongoose
+  if (!cached.promise) {
+    logger.info('Connecting to MongoDB...');
+    cached.promise = mongoose
       .connect(uri, {
-        bufferCommands: false,
-        serverSelectionTimeoutMS: isServerless ? 20000 : 30000,
-        socketTimeoutMS: 45000,
-        connectTimeoutMS: isServerless ? 20000 : 30000,
-        maxPoolSize: isServerless ? 5 : 10,
-        family: 4,
+        serverSelectionTimeoutMS: 10000,
+        connectTimeoutMS: 10000,
+        maxPoolSize: 10,
       })
-      .then((connection) => {
-        logger.info(`MongoDB connected: ${connection.connection.host}`);
-        runInit().catch((err) => logger.error(`Specialty init error: ${err.message}`));
-        return connection;
+      .then(async (instance) => {
+        logger.info(`MongoDB connected: ${instance.connection.host}`);
+        await runInit();
+        return instance;
       })
-      .catch((err) => {
-        cache.promise = null;
-        logger.error(`MongoDB connection error: ${err.message}`);
-        throw err;
+      .catch((error) => {
+        cached.promise = null;
+        cached.conn = null;
+        logger.error(`MongoDB connection error: ${error.message}`);
+        throw error;
       });
   }
 
-  cache.conn = await cache.promise;
-  return cache.conn;
-};
-
-export default connectDB;
+  cached.conn = await cached.promise;
+  return cached.conn;
+}
