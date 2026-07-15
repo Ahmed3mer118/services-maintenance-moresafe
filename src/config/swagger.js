@@ -1,5 +1,7 @@
 import swaggerJsdoc from 'swagger-jsdoc';
 
+const isVercel = !!process.env.VERCEL;
+
 const options = {
   definition: {
     openapi: '3.0.0',
@@ -19,5 +21,5 @@ const options = {
   apis: ['./src/routes/*.js', './src/controllers/*.js'],
 };
 
-export const swaggerSpec = swaggerJsdoc(options);
+export const swaggerSpec = isVercel ? {} : swaggerJsdoc(options);
 export default swaggerSpec;

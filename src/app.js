@@ -13,8 +13,8 @@ import routes from './routes/index.js';
 import { errorHandler, notFound } from './middlewares/error.middleware.js';
 import { swaggerSpec } from './config/swagger.js';
 import { configureCloudinary } from './config/cloudinary.js';
-import connectDB from './config/database.js';
-import mongoose from 'mongoose';
+import { getDbStatus } from './config/database.js';
+import { ensureDb } from './middlewares/ensureDb.middleware.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isVercel = !!process.env.VERCEL;
@@ -65,32 +65,21 @@ app.get('/', (_req, res) => {
   res.json({
     success: true,
     message: 'Welcome to the Start Server',
-    db: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    db: getDbStatus(),
     timestamp: new Date().toISOString(),
   });
 });
 
-app.get('/api/v1/health', async (_req, res) => {
-  try {
-    await connectDB();
-    res.json({
-      success: true,
-      status: 'ok',
-      db: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-      timestamp: new Date().toISOString(),
-    });
-  } catch (err) {
-    res.status(503).json({
-      success: false,
-      status: 'error',
-      db: 'disconnected',
-      message: err.message,
-      timestamp: new Date().toISOString(),
-    });
-  }
+app.get('/api/v1/health', (_req, res) => {
+  res.json({
+    success: true,
+    status: 'ok',
+    db: getDbStatus(),
+    timestamp: new Date().toISOString(),
+  });
 });
 
-app.use('/api/v1', routes);
+app.use('/api/v1', ensureDb, routes);
 
 if (!isVercel) {
   app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
